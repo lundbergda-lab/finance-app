@@ -1383,10 +1383,10 @@ function getMonthKey() {
 function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  const labels = ['dashboard','analytics','cashflow','loans','balancesheet','transactions','accounts','budget','upload','settings'];
-  const idx = labels.indexOf(id);
-  if (idx >= 0) document.querySelectorAll('.nav-item')[idx].classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => {
+    const onclick = n.getAttribute('onclick') || '';
+    n.classList.toggle('active', onclick.indexOf("showPage('" + id + "')") >= 0);
+  });
   renderAll();
 }
 
