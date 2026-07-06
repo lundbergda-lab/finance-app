@@ -1,0 +1,14 @@
+# Environment & secrets
+.env
+
+# Database (personal finance data — never commit)
+data/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# OS
+.DS_Store

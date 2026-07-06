@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ekonomi",
+      "runtimeExecutable": "./venv/bin/uvicorn",
+      "runtimeArgs": ["server.main:app", "--host", "127.0.0.1", "--port", "8040"],
+      "port": 8040
+    }
+  ]
+}
