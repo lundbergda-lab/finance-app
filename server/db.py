@@ -26,7 +26,9 @@ ENTITY_TABLES = {
 SETTINGS_KEYS = [
     "payeeRules", "customCategories", "filterRules", "importPeriods",
     "sourceNames", "sourceToAccount", "cashFlowOverrides", "budgetRowTypes",
-    "hiddenCreditors", "loanTypeOrder", "apiKey", "currency",
+    "prognosisOverrides", "hiddenCreditors", "hiddenCategories",
+    "loanTypeOrder", "userLabels", "accountTypes", "budgetVersions",
+    "activeBudgetVersionId", "apiKey", "currency",
 ]
 
 DEFAULT_DATA = {
@@ -34,8 +36,10 @@ DEFAULT_DATA = {
     "payeeRules": {}, "customCategories": [], "filterRules": [],
     "importPeriods": [], "sourceNames": {}, "sourceToAccount": {},
     "creditors": [], "manualAssets": [], "cashFlowOverrides": {},
-    "budgetRowTypes": {}, "hiddenCreditors": [], "loanTypeOrder": [],
-    "incomes": [], "apiKey": "", "currency": "kr",
+    "budgetRowTypes": {}, "prognosisOverrides": {}, "hiddenCreditors": [],
+    "hiddenCategories": [], "loanTypeOrder": [], "userLabels": [],
+    "accountTypes": {}, "incomes": [], "budgetVersions": [],
+    "activeBudgetVersionId": "", "apiKey": "", "currency": "kr",
 }
 
 
