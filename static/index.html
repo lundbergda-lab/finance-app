@@ -1105,9 +1105,11 @@ tr.inc-drop-target > td{background:var(--accent-light);box-shadow:inset 0 2px 0 
                 <th style="text-align:right;width:10%">Balance</th>
                 <th style="text-align:right;width:6%">Rate</th>
                 <th style="text-align:right;width:9%">Monthly</th>
-                <th style="text-align:right;width:9%">Paid YTD</th>
-                <th style="text-align:right;width:10%">Rem. CY</th>
-                <th style="width:12%">Payoff</th>
+                <th style="text-align:right;width:8%">Paid YTD</th>
+                <th style="text-align:right;width:9%">Rem. CY</th>
+                <th style="width:8%">Start</th>
+                <th style="width:8%">End</th>
+                <th style="width:11%">Payoff</th>
                 <th style="width:32px;text-align:center"></th>
               </tr>
             </thead>
@@ -1388,16 +1390,28 @@ tr.inc-drop-target > td{background:var(--accent-light);box-shadow:inset 0 2px 0 
 </div>
 
 <div id="debtChatPanel" style="position:fixed;bottom:88px;right:24px;width:360px;height:520px;background:var(--surface);border:0.5px solid var(--border);border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.12);z-index:149;display:none;flex-direction:column;overflow:hidden">
+  <!-- Resize grip (top-left: panel is anchored bottom-right, so it grows up/left) -->
+  <div id="debtChatResize" onmousedown="startDebtChatResize(event)" title="Drag to resize" style="position:absolute;top:0;left:0;width:22px;height:22px;cursor:nwse-resize;z-index:5;display:flex;align-items:flex-start;justify-content:flex-start;padding:5px;color:var(--text3)" onmouseover="this.style.color='var(--text1)'" onmouseout="this.style.color='var(--text3)'">
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><path d="M1 5L5 1M1 9L9 1"/></svg>
+  </div>
   <!-- Header -->
-  <div style="padding:16px 20px;border-bottom:0.5px solid var(--border);background:var(--surface2);display:flex;align-items:center;gap:10px">
-    <div style="width:32px;height:32px;background:#054A74;border-radius:8px;display:flex;align-items:center;justify-content:center">
+  <div style="padding:14px 16px;border-bottom:0.5px solid var(--border);background:var(--surface2);display:flex;align-items:center;gap:10px">
+    <div style="width:32px;height:32px;background:#054A74;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
     </div>
-    <div>
+    <div style="flex:1;min-width:0">
       <div style="font-size:13px;font-weight:600;color:var(--text1)">Debt Advisor</div>
       <div style="font-size:10px;color:var(--text3)">AI-powered · full financial data</div>
     </div>
+    <div style="display:flex;gap:0;flex-shrink:0">
+      <button class="ct on" id="dcTabChat" onclick="setDebtChatView('chat')">Chat</button>
+      <button class="ct" id="dcTabHistory" onclick="setDebtChatView('history')">History</button>
+    </div>
+    <button class="top-btn" onclick="newDebtChat()" title="Start a new conversation" style="font-size:11px;padding:4px 8px;flex-shrink:0">＋ New</button>
   </div>
+
+  <!-- History (list of saved conversations) -->
+  <div id="debtChatHistoryView" style="flex:1;padding:12px 16px;overflow-y:auto;display:none"></div>
 
   <!-- Messages -->
   <div id="debtChatMessages" style="flex:1;padding:16px;overflow-y:auto">
@@ -1464,6 +1478,7 @@ const DEFAULT_DATA = {
   hiddenCategories: [], // [name] — categories hidden from pickers/views
   budgetVersions: [],   // [{id,name,createdAt,budgets:{"2026-01":{cat:amt}}}] — named budget scenarios
   activeBudgetVersionId: '', // which version feeds comparisons on other pages
+  debtChats: [],        // [{id,title,createdAt,updatedAt,messages:[{role,content}]}] — saved advisor conversations
   apiKey: '',
   currency: 'kr',
 };
@@ -3971,6 +3986,7 @@ function renderBudget() {
     var escapedCatForToggle = esc(cat).replace(/'/g, "\\'");
     var parentRow = '<tr style="cursor:pointer" onclick="toggleBudgetExpand(\'' + escapedCatForToggle + '\')">' +
       '<td style="' + catRowStyle + ';padding-left:16px;font-weight:500"><div style="display:flex;align-items:center;gap:4px">' + arrow + '<span style="flex:1">' + esc(cat) + '</span>' +
+        '<span style="font-size:10px;color:var(--text3);cursor:pointer;opacity:0.4" title="Rename" onmouseover="this.style.opacity=1;this.style.color=\'var(--accent)\'" onmouseout="this.style.opacity=0.4;this.style.color=\'var(--text3)\'" onclick="event.stopPropagation();renameBudgetRowName(\'' + escapedCatForToggle + '\')">✎</span>' +
         '<span style="font-size:9px;color:var(--text3);cursor:pointer;opacity:0.4" onmouseover="this.style.opacity=1;this.style.color=\'var(--coral)\'" onmouseout="this.style.opacity=0.4;this.style.color=\'var(--text3)\'" onclick="event.stopPropagation();deleteBudgetRow(\'' + escapedCatForToggle + '\')">✕</span>' +
       '</div></td>' + cells + '</tr>';
 
@@ -3991,7 +4007,9 @@ function renderBudget() {
           (val > 0 ? (isIncome ? fmt(val) : fmt(-val)) : '<span style="color:var(--text3)">—</span>') + '</td>';
       }
       subCells += '<td style="' + cellStyle + ';background:var(--surface2);color:var(--text2)">' + (subTotal > 0 ? (isIncome ? fmt(subTotal) : fmt(-subTotal)) : '—') + '</td>';
-      subRows += '<tr style="background:var(--surface2)"><td style="' + catRowStyle + ';padding-left:40px;font-weight:400;font-size:10px;color:var(--text2);background:var(--surface2)"><div style="display:flex;align-items:center;gap:4px"><span style="flex:1;' + (cat === 'Loans & Credit' ? 'cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px' : '') + '"' + (cat === 'Loans & Credit' ? ' onclick="event.stopPropagation();renameBudgetSub(\'' + escapedSub + '\')"' : '') + '>' + esc(subName) + '</span>' +
+      var subRenameCall = (cat === 'Loans & Credit') ? 'renameBudgetSub(\'' + escapedSub + '\')' : 'renameBudgetRowName(\'' + escapedSub + '\')';
+      subRows += '<tr style="background:var(--surface2)"><td style="' + catRowStyle + ';padding-left:40px;font-weight:400;font-size:10px;color:var(--text2);background:var(--surface2)"><div style="display:flex;align-items:center;gap:4px"><span style="flex:1;cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px" title="Rename" onclick="event.stopPropagation();' + subRenameCall + '">' + esc(subName) + '</span>' +
+        '<span style="font-size:10px;color:var(--text3);cursor:pointer;opacity:0.4" title="Rename" onmouseover="this.style.opacity=1;this.style.color=\'var(--accent)\'" onmouseout="this.style.opacity=0.4;this.style.color=\'var(--text3)\'" onclick="event.stopPropagation();' + subRenameCall + '">✎</span>' +
         '<span style="font-size:9px;color:var(--text3);cursor:pointer;opacity:0.4" onmouseover="this.style.opacity=1;this.style.color=\'var(--coral)\'" onmouseout="this.style.opacity=0.4;this.style.color=\'var(--text3)\'" onclick="event.stopPropagation();deleteBudgetRow(\'' + escapedSub + '\')">✕</span></div></td>' + subCells + '</tr>';
     });
 
@@ -4343,6 +4361,41 @@ function saveBudgetSubRename(oldSubKey) {
   document.getElementById('budgetRenameSubModal').remove();
   renderBudget();
   toast('Sub-item renamed to ' + newName);
+}
+
+// Inline-rename a budget row (parent category or sub-item) in the viewed version.
+function renameBudgetRowName(oldKey) {
+  var isSub = oldKey.indexOf('::') !== -1;
+  var curName = isSub ? oldKey.split('::').slice(1).join('::') : oldKey;
+  var input = prompt(isSub ? 'Rename sub-item:' : 'Rename budget row:', curName);
+  if (input === null) return;
+  var newName = input.trim();
+  if (!newName || newName === curName) return;
+  if (newName.indexOf('::') !== -1) { toast('Name cannot contain "::"'); return; }
+  var B = budgetStore();
+  if (isSub) {
+    var parent = oldKey.split('::')[0];
+    var newKey = parent + '::' + newName;
+    Object.keys(B).forEach(function(mk) {
+      if (B[mk] && B[mk][oldKey] !== undefined) { B[mk][newKey] = (B[mk][newKey] || 0) + B[mk][oldKey]; delete B[mk][oldKey]; }
+    });
+  } else {
+    Object.keys(B).forEach(function(mk) {
+      var bk = B[mk]; if (!bk) return;
+      Object.keys(bk).forEach(function(k) {
+        if (k === oldKey) { bk[newName] = (bk[newName] || 0) + bk[k]; if (newName !== k) delete bk[k]; }
+        else if (k.indexOf(oldKey + '::') === 0) { var nk = newName + '::' + k.split('::').slice(1).join('::'); bk[nk] = (bk[nk] || 0) + bk[k]; delete bk[k]; }
+      });
+    });
+    if (DATA.budgetRowTypes && DATA.budgetRowTypes[oldKey] !== undefined) {
+      DATA.budgetRowTypes[newName] = DATA.budgetRowTypes[oldKey];
+      if (newName !== oldKey) delete DATA.budgetRowTypes[oldKey];
+    }
+    if (window._budgetExpanded && window._budgetExpanded.has(oldKey)) { window._budgetExpanded.delete(oldKey); window._budgetExpanded.add(newName); }
+  }
+  saveData(DATA);
+  renderBudget();
+  toast('Renamed to "' + newName + '"');
 }
 
 function deleteBudgetRow(cat) {
@@ -5036,7 +5089,7 @@ async function recategorizeTransactions(txns) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: CLAUDE_MODEL,
-          max_tokens: 4000,
+          max_tokens: 16000, // caps thinking + text; Sonnet 5 thinks by default, so leave headroom
           system: recatPrompt,
           messages: [{ role: 'user', content: JSON.stringify(payload) }]
         })
@@ -6156,66 +6209,67 @@ Return ONLY a valid JSON array, no other text. Example:
 
 If you cannot parse any transactions, return an empty array: []`;
 
-  let messages;
-  if (isText) {
-    messages = [{ role: 'user', content: 'Here is bank/card statement data from file "' + filename + '". Extract all transactions:\n\n' + content }];
-  } else {
-    // Binary: PDF document or a PNG/JPEG image (Excel is parsed to text above)
-    var ext = (content.type || '').toLowerCase();
-    var mediaBlock;
-    if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') {
-      var mediaType = ext === 'png' ? 'image/png' : 'image/jpeg';
-      mediaBlock = { type: 'image', source: { type: 'base64', media_type: mediaType, data: content.base64 } };
-    } else {
-      mediaBlock = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: content.base64 } };
+  // Parse a model response into clean transactions. Tolerates Swedish
+  // number formats ("-1 250,50") in case amounts come back as strings.
+  function parseTxns(text) {
+    var m = text.match(/\[[\s\S]*\]/);
+    if (!m) return [];
+    var arr;
+    try { arr = JSON.parse(m[0]); } catch (e) { return []; }
+    if (!Array.isArray(arr)) return [];
+    return arr.map(function(t) {
+      var amt = typeof t.amount === 'number' ? t.amount
+        : parseFloat(String(t.amount == null ? '' : t.amount).replace(/\s/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.'));
+      return { date: t.date, description: t.description, amount: amt, category: CATEGORIES.includes(t.category) ? t.category : 'Other' };
+    }).filter(function(t) { return t.date && t.description && typeof t.amount === 'number' && !isNaN(t.amount); });
+  }
+
+  async function callExtract(msgs) {
+    const response = await fetch('/api/anthropic/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 16000, system: systemPrompt, messages: msgs })
+    });
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error('API error ' + response.status + ': ' + err.substring(0, 200));
     }
-    messages = [{
-      role: 'user',
-      content: [
-        mediaBlock,
-        { type: 'text', text: 'This is a bank/card statement (file "' + filename + '"). Extract ALL transactions from it. Return JSON array as instructed.' }
-      ]
-    }];
+    const data = await response.json();
+    return parseTxns(data.content.map(function(c) { return c.text || ''; }).join(''));
   }
 
-  const response = await fetch('/api/anthropic/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      max_tokens: 8000,
-      system: systemPrompt,
-      messages
-    })
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`API error ${response.status}: ${err.substring(0,200)}`);
+  if (isText) {
+    // Split into header + data rows and extract in row-batches, so large
+    // files don't exceed max_tokens (which truncates the JSON → 0 results).
+    var lines = content.split(/\r?\n/);
+    var di = 0;
+    while (di < lines.length && lines[di].trim() === '') di++;
+    var header = di < lines.length ? lines[di].replace(/^﻿/, '') : '';
+    var dataRows = lines.slice(di + 1).filter(function(l) { return l.trim() !== ''; });
+    if (dataRows.length === 0) {
+      return await callExtract([{ role: 'user', content: 'Here is bank/card statement data from file "' + filename + '". Extract all transactions:\n\n' + content }]);
+    }
+    var BATCH = 50, all = [];
+    for (var i = 0; i < dataRows.length; i += BATCH) {
+      var chunk = dataRows.slice(i, i + BATCH).join('\n');
+      var msg = 'Here is bank/card statement data from file "' + filename + '" (rows ' + (i + 1) + '–' + Math.min(i + BATCH, dataRows.length) + ' of ' + dataRows.length + '). Extract all transactions:\n\n' + header + '\n' + chunk;
+      all = all.concat(await callExtract([{ role: 'user', content: msg }]));
+    }
+    return all;
   }
 
-  const data = await response.json();
-  const text = data.content.map(c => c.text || '').join('');
-
-  // Extract JSON from response
-  let jsonStr = text;
-  const jsonMatch = text.match(/\[[\s\S]*\]/);
-  if (jsonMatch) jsonStr = jsonMatch[0];
-
-  try {
-    const txns = JSON.parse(jsonStr);
-    if (!Array.isArray(txns)) throw new Error('Not an array');
-    // Validate and clean
-    return txns.filter(t => t.date && t.description && typeof t.amount === 'number').map(t => ({
-      date: t.date,
-      description: t.description,
-      amount: t.amount,
-      category: CATEGORIES.includes(t.category) ? t.category : 'Other'
-    }));
-  } catch (e) {
-    console.error('Failed to parse Claude response:', text);
-    throw new Error('Could not parse transaction data from response');
+  // Binary: PDF document or a PNG/JPEG image (Excel is parsed to text above)
+  var ext = (content.type || '').toLowerCase();
+  var mediaBlock;
+  if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') {
+    mediaBlock = { type: 'image', source: { type: 'base64', media_type: ext === 'png' ? 'image/png' : 'image/jpeg', data: content.base64 } };
+  } else {
+    mediaBlock = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: content.base64 } };
   }
+  return await callExtract([{
+    role: 'user',
+    content: [mediaBlock, { type: 'text', text: 'This is a bank/card statement (file "' + filename + '"). Extract ALL transactions from it. Return JSON array as instructed.' }]
+  }]);
 }
 
 // ── Data Export/Import ──
@@ -7382,6 +7436,143 @@ var LOAN_TYPES = [
 
 // ── Debt Advisor Chat ──
 var debtChatHistory = [];
+// Drag-resize for the debt chat panel. Anchored bottom-right, so dragging
+// the top-left grip up/left grows it. Opens at the default 360×520; the
+// chosen size sticks until the page is reloaded.
+var _dcResize = null;
+function startDebtChatResize(e) {
+  e.preventDefault();
+  var panel = document.getElementById('debtChatPanel');
+  if (!panel) return;
+  _dcResize = { x: e.clientX, y: e.clientY, w: panel.offsetWidth, h: panel.offsetHeight };
+  document.addEventListener('mousemove', doDebtChatResize);
+  document.addEventListener('mouseup', stopDebtChatResize);
+  document.body.style.userSelect = 'none';
+}
+function doDebtChatResize(e) {
+  if (!_dcResize) return;
+  var panel = document.getElementById('debtChatPanel');
+  if (!panel) return;
+  var w = _dcResize.w + (_dcResize.x - e.clientX);
+  var h = _dcResize.h + (_dcResize.y - e.clientY);
+  // Clamp: never smaller than the default, never past the viewport edge
+  w = Math.max(360, Math.min(w, window.innerWidth - 48));
+  h = Math.max(520, Math.min(h, window.innerHeight - 112));
+  panel.style.width = w + 'px';
+  panel.style.height = h + 'px';
+}
+function stopDebtChatResize() {
+  _dcResize = null;
+  document.removeEventListener('mousemove', doDebtChatResize);
+  document.removeEventListener('mouseup', stopDebtChatResize);
+  document.body.style.userSelect = '';
+}
+
+// ── Debt chat history: conversations persist in DATA.debtChats ──
+var debtChatCurrentId = null;
+// Snapshot of the welcome message + suggestion chips, restored on "New chat"
+var _dcWelcomeHTML = (function() {
+  var m = document.getElementById('debtChatMessages');
+  return m ? m.innerHTML : null;
+})();
+
+function persistDebtChat() {
+  if (!debtChatHistory.length) return;
+  if (!Array.isArray(DATA.debtChats)) DATA.debtChats = [];
+  var now = new Date().toISOString();
+  if (!debtChatCurrentId) {
+    debtChatCurrentId = genId();
+    var firstUser = debtChatHistory.find(function(m) { return m.role === 'user'; });
+    DATA.debtChats.unshift({
+      id: debtChatCurrentId,
+      title: firstUser ? String(firstUser.content).substring(0, 80) : 'Conversation',
+      createdAt: now,
+      updatedAt: now,
+      messages: debtChatHistory.slice()
+    });
+  } else {
+    var rec = DATA.debtChats.find(function(c) { return c.id === debtChatCurrentId; });
+    if (rec) {
+      rec.messages = debtChatHistory.slice();
+      rec.updatedAt = now;
+    } else {
+      debtChatCurrentId = null;
+      return persistDebtChat();
+    }
+  }
+  saveData(DATA);
+}
+
+function setDebtChatView(view) {
+  var chat = document.getElementById('debtChatMessages');
+  var hist = document.getElementById('debtChatHistoryView');
+  var tc = document.getElementById('dcTabChat');
+  var th = document.getElementById('dcTabHistory');
+  if (!chat || !hist) return;
+  var isChat = view === 'chat';
+  chat.style.display = isChat ? '' : 'none';
+  hist.style.display = isChat ? 'none' : '';
+  if (tc) tc.className = 'ct' + (isChat ? ' on' : '');
+  if (th) th.className = 'ct' + (isChat ? '' : ' on');
+  if (!isChat) renderDebtChatHistory();
+  else chat.scrollTop = chat.scrollHeight;
+}
+
+function renderDebtChatHistory() {
+  var el = document.getElementById('debtChatHistoryView');
+  if (!el) return;
+  var chats = DATA.debtChats || [];
+  if (chats.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:var(--text3);font-size:12px;padding:36px 10px;line-height:1.6">No saved conversations yet.<br>Chats are saved automatically as you ask questions.</div>';
+    return;
+  }
+  el.innerHTML = chats.map(function(c) {
+    var d = (c.updatedAt || c.createdAt || '').substring(0, 10);
+    var n = (c.messages || []).length;
+    return '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:0.5px solid ' + (c.id === debtChatCurrentId ? 'var(--accent)' : 'var(--border)') + ';border-radius:10px;margin-bottom:6px;cursor:pointer;background:var(--surface);transition:border-color 0.15s" onclick="loadDebtChat(\'' + c.id + '\')" onmouseover="this.style.borderColor=\'var(--text3)\'" onmouseout="this.style.borderColor=\'' + (c.id === debtChatCurrentId ? 'var(--accent)' : 'var(--border)') + '\'">' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:12px;color:var(--text1);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(c.title || 'Conversation') + '</div>' +
+        '<div style="font-size:10px;color:var(--text3)">' + d + ' · ' + n + ' message' + (n !== 1 ? 's' : '') + (c.id === debtChatCurrentId ? ' · current' : '') + '</div>' +
+      '</div>' +
+      '<button class="import-action" style="color:var(--coral);font-size:11px;flex-shrink:0" title="Delete conversation" onclick="event.stopPropagation();deleteDebtChat(\'' + c.id + '\')">✕</button>' +
+    '</div>';
+  }).join('');
+}
+
+function loadDebtChat(id) {
+  var rec = (DATA.debtChats || []).find(function(c) { return c.id === id; });
+  if (!rec) return;
+  debtChatCurrentId = id;
+  debtChatHistory = (rec.messages || []).slice();
+  var msgs = document.getElementById('debtChatMessages');
+  msgs.innerHTML = '';
+  debtChatHistory.forEach(function(m) { appendChatMessage(m.role, m.content); });
+  setDebtChatView('chat');
+}
+
+function newDebtChat() {
+  debtChatCurrentId = null;
+  debtChatHistory = [];
+  var msgs = document.getElementById('debtChatMessages');
+  if (msgs && _dcWelcomeHTML !== null) msgs.innerHTML = _dcWelcomeHTML;
+  setDebtChatView('chat');
+  var inp = document.getElementById('debtChatInput');
+  if (inp) inp.focus();
+}
+
+function deleteDebtChat(id) {
+  if (!confirm('Delete this conversation?')) return;
+  DATA.debtChats = (DATA.debtChats || []).filter(function(c) { return c.id !== id; });
+  if (debtChatCurrentId === id) {
+    debtChatCurrentId = null;
+    debtChatHistory = [];
+    var msgs = document.getElementById('debtChatMessages');
+    if (msgs && _dcWelcomeHTML !== null) msgs.innerHTML = _dcWelcomeHTML;
+  }
+  saveData(DATA);
+  renderDebtChatHistory();
+}
+
 var debtChatOpen = false;
 
 function toggleDebtChat() {
@@ -7574,19 +7765,75 @@ function buildFullContext() {
   return lines.join('\n');
 }
 
+// Minimal markdown renderer for chat replies: headings, bullet lists,
+// pipe tables, **bold**, `code`. All content is HTML-escaped first.
+function renderChatMarkdown(md) {
+  var escHtml = function(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+  var inline = function(s) {
+    return escHtml(s)
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/`([^`]+)`/g, '<code style="background:var(--surface);padding:0 4px;border-radius:4px;font-size:11px">$1</code>');
+  };
+  var splitRow = function(line) {
+    return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(function(c) { return c.trim(); });
+  };
+  var isSepRow = function(line) {
+    return /^\s*\|?[\s:|-]+\|?\s*$/.test(line) && line.indexOf('-') !== -1;
+  };
+
+  var lines = md.split('\n');
+  var html = '';
+  var i = 0;
+  var cellPad = 'padding:4px 8px;border-bottom:0.5px solid var(--border)';
+  while (i < lines.length) {
+    var line = lines[i];
+
+    // Pipe table: header row followed by a |---|---| separator
+    if (/^\s*\|/.test(line) && i + 1 < lines.length && isSepRow(lines[i + 1])) {
+      var head = splitRow(line);
+      var aligns = splitRow(lines[i + 1]).map(function(c) { return /-+:$/.test(c) ? 'right' : 'left'; });
+      i += 2;
+      var rows = [];
+      while (i < lines.length && /^\s*\|/.test(lines[i]) && !isSepRow(lines[i])) { rows.push(splitRow(lines[i])); i++; }
+      html += '<div style="overflow-x:auto;margin:8px 0"><table style="border-collapse:collapse;font-size:11px;min-width:100%">' +
+        '<thead><tr>' + head.map(function(c, ci) {
+          return '<th style="' + cellPad + ';text-align:' + (aligns[ci] || 'left') + ';font-weight:600;color:var(--text2);white-space:nowrap">' + inline(c) + '</th>';
+        }).join('') + '</tr></thead><tbody>' +
+        rows.map(function(r) {
+          return '<tr>' + r.map(function(c, ci) {
+            return '<td style="' + cellPad + ';text-align:' + (aligns[ci] || 'left') + ';white-space:nowrap">' + inline(c) + '</td>';
+          }).join('') + '</tr>';
+        }).join('') + '</tbody></table></div>';
+      continue;
+    }
+
+    if (/^###\s+/.test(line)) { html += '<div style="font-weight:600;margin:8px 0 3px">' + inline(line.replace(/^###\s+/, '')) + '</div>'; i++; continue; }
+    if (/^##\s+/.test(line))  { html += '<div style="font-weight:600;font-size:13px;margin:10px 0 4px">' + inline(line.replace(/^##\s+/, '')) + '</div>'; i++; continue; }
+    if (/^#\s+/.test(line))   { html += '<div style="font-weight:600;font-size:14px;margin:10px 0 4px">' + inline(line.replace(/^#\s+/, '')) + '</div>'; i++; continue; }
+    if (/^\s*[-•*]\s+/.test(line)) {
+      html += '<div style="padding-left:14px;position:relative"><span style="position:absolute;left:2px">•</span>' + inline(line.replace(/^\s*[-•*]\s+/, '')) + '</div>';
+      i++; continue;
+    }
+    if (line.trim() === '') { html += '<div style="height:6px"></div>'; i++; continue; }
+    html += '<div>' + inline(line) + '</div>';
+    i++;
+  }
+  return html;
+}
+
 function appendChatMessage(role, content) {
   var container = document.getElementById('debtChatMessages');
   var div = document.createElement('div');
-  div.style.cssText = 'margin-bottom:12px;padding:10px 14px;border-radius:10px;font-size:12px;line-height:1.6;max-width:90%;white-space:pre-wrap;word-wrap:break-word';
+  div.style.cssText = 'margin-bottom:12px;padding:10px 14px;border-radius:10px;font-size:12px;line-height:1.6;max-width:90%;word-wrap:break-word';
 
   if (role === 'user') {
-    div.style.cssText += ';background:var(--accent);color:white;margin-left:auto;text-align:right;border-bottom-right-radius:4px';
+    div.style.cssText += ';background:var(--accent);color:white;margin-left:auto;text-align:right;border-bottom-right-radius:4px;white-space:pre-wrap';
     div.textContent = content;
   } else if (role === 'assistant') {
     div.style.cssText += ';background:var(--surface2);color:var(--text1);border-bottom-left-radius:4px';
-    div.innerHTML = content.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    div.innerHTML = renderChatMarkdown(content);
   } else {
-    div.style.cssText += ';background:var(--surface2);color:var(--text3);text-align:center;max-width:100%;font-style:italic';
+    div.style.cssText += ';background:var(--surface2);color:var(--text3);text-align:center;max-width:100%;font-style:italic;white-space:pre-wrap';
     div.textContent = content;
   }
 
@@ -7605,6 +7852,7 @@ async function sendDebtChat() {
   }
 
   input.value = '';
+  setDebtChatView('chat'); // sending from the History tab jumps back to the chat
   appendChatMessage('user', question);
 
   // Remove the placeholder on first message
@@ -7623,8 +7871,9 @@ async function sendDebtChat() {
   var fullContext = buildFullContext();
 
   debtChatHistory.push({ role: 'user', content: question });
+  persistDebtChat();
 
-  var systemPrompt = 'You are a Swedish family finance advisor called Rezlv Advisor. You have access to the user\'s COMPLETE financial data below — accounts, loans, income, cash flow, budget, spending categories, top payees, and net worth.\n\nGive specific, actionable advice with concrete numbers. Use Swedish krona (kr) for all amounts. Format numbers with space as thousands separator. Be concise — use short paragraphs and bullet points.\n\nWhen calculating loan payoffs, use rak amortering (straight-line amortization) which is standard in Sweden.\n\nRULES:\n- Always show your math\n- Break down payment plans per loan\n- Reference specific categories and payees from the data\n- Compare budget vs actuals when relevant\n- Answer questions about any financial topic: loans, spending, budget, cash flow, savings, net worth, payees\n- Be honest about risks and tradeoffs\n\n' + fullContext;
+  var systemPrompt = 'You are a Swedish family finance advisor called Rezlv Advisor. You have access to the user\'s COMPLETE financial data below — accounts, loans, income, cash flow, budget, spending categories, top payees, and net worth.\n\nGive specific, actionable advice with concrete numbers. Use Swedish krona (kr) for all amounts. Format numbers with space as thousands separator. Be concise — use short paragraphs and bullet points.\n\nWhen calculating loan payoffs:\n- Bank loans and mortgages: use rak amortering (straight-line amortization), standard for Swedish banks.\n- BNPL and credit-card plans (Klarna, Walley, cards): use a FIXED monthly payment (annuity), and treat the quoted APR as an EFFECTIVE annual rate — monthly rate = (1+APR)^(1/12) − 1, NOT APR/12. This matches how Klarna itself quotes plans (e.g. 2 393 kr at 21.90% APR over 12 months = 221.65 kr/month).\n\nRULES:\n- Always show your math\n- Break down payment plans per loan\n- Reference specific categories and payees from the data\n- Compare budget vs actuals when relevant\n- Answer questions about any financial topic: loans, spending, budget, cash flow, savings, net worth, payees\n- Be honest about risks and tradeoffs\n\n' + fullContext;
 
   try {
     var response = await fetch('/api/anthropic/messages', {
@@ -7632,7 +7881,7 @@ async function sendDebtChat() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: CLAUDE_MODEL,
-        max_tokens: 1500,
+        max_tokens: 16000, // caps thinking + text; Sonnet 5 thinks by default, so leave headroom
         system: systemPrompt,
         messages: debtChatHistory
       })
@@ -7642,10 +7891,16 @@ async function sendDebtChat() {
     var loading = document.getElementById('debtChatLoading');
     if (loading) loading.remove();
 
-    if (data.content && data.content[0]) {
-      var reply = data.content[0].text;
-      debtChatHistory.push({ role: 'assistant', content: reply });
-      appendChatMessage('assistant', reply);
+    if (data.content && data.content.length) {
+      // Join all text blocks — the first block can be a non-text (thinking) block
+      var reply = data.content.map(function(c) { return c.text || ''; }).join('').trim();
+      if (reply) {
+        debtChatHistory.push({ role: 'assistant', content: reply });
+        persistDebtChat();
+        appendChatMessage('assistant', reply);
+      } else {
+        appendChatMessage('system', 'Empty reply from the model — please try again.');
+      }
     } else if (data.error) {
       appendChatMessage('system', 'Error: ' + (data.error.message || 'Unknown error'));
     }
@@ -7654,6 +7909,42 @@ async function sendDebtChat() {
     if (loading) loading.remove();
     appendChatMessage('system', 'Connection error: ' + err.message);
   }
+}
+
+// For BNPL / credit creditors, derive the row's Monthly / Payoff / Remaining
+// from the financed-purchase plans or the bundle plan instead of the classic
+// loan fields. Returns {monthly, payoffIdx, termMonths} or null.
+function creditorPlanSummary(c, rate) {
+  var nowIdx = (new Date()).getFullYear() * 12 + (new Date()).getMonth();
+
+  if (Array.isArray(c.activePlans) && c.activePlans.length) {
+    var monthly = 0, lastEnd = -1, any = false;
+    c.activePlans.forEach(function(p) {
+      if (!(p.amount > 0 && p.months > 0)) return;
+      any = true;
+      var pay = planMonthlyPayment(p.amount, rate, p.months);
+      var s = monthIdx(p.start); if (isNaN(s)) s = nowIdx;
+      var e = s + p.months - 1;
+      if (e >= nowIdx) monthly += pay; // still running (or about to start)
+      if (e > lastEnd) lastEnd = e;
+    });
+    if (!any) return null;
+    return { monthly: monthly, payoffIdx: lastEnd + 1, termMonths: Math.max(0, lastEnd - nowIdx + 1) };
+  }
+
+  var bp = c.bundlePlan;
+  if (bp && bp.amount > 0) {
+    var P = bp.amount, pay = bp.monthly || 0, mr = effMonthlyRate(rate);
+    var s = monthIdx(bp.start); if (isNaN(s)) s = nowIdx;
+    var e = monthIdx(bp.end);
+    if (!pay && !isNaN(e)) pay = planMonthlyPayment(P, rate, e - s + 1);
+    if (!pay) return null;
+    // Full payoff at this monthly (a fixed window's leftover just extends the term)
+    var n = mr > 0 ? Math.ceil(-Math.log(1 - mr * P / pay) / Math.log(1 + mr)) : Math.ceil(P / pay);
+    if (!isFinite(n) || n <= 0) return { monthly: pay, payoffIdx: null, termMonths: 0 }; // below interest
+    return { monthly: pay, payoffIdx: s + n, termMonths: Math.max(0, s + n - nowIdx) };
+  }
+  return null;
 }
 
 function renderLoans() {
@@ -7711,27 +8002,38 @@ function renderLoans() {
     var rate = c.rate || 0;
     var isActive = c.status !== 'paid_off';
 
+    // BNPL / credit: derive the payment from the configured plans, not detection
+    var planSum = creditorPlanSummary(c, rate);
+    if (planSum) avgMonthly = planSum.monthly;
+
     if (isActive) { totalDebt += balance; totalMonthly += avgMonthly; activeCount++; }
     totalYTD += paidYTD;
 
+    var nowIdxP = (new Date()).getFullYear() * 12 + (new Date()).getMonth();
     var payoffStr = '—';
-    if (balance > 0 && avgMonthly > 0) {
+    if (planSum) {
+      // Payoff from the configured plan
+      if (planSum.payoffIdx === null) payoffStr = '<span style="color:var(--coral)">Never</span>';
+      else payoffStr = fmtMonthIdx(planSum.payoffIdx - 1) + ' (' + planSum.termMonths + ' mo)';
+    } else if (c.termMonths > 0) {
+      // Explicit term (or end date) drives the payoff — keep it consistent with the End column
+      var sIdxP = monthIdx((c.startDate || '').substring(0, 7));
+      var endP = !isNaN(sIdxP) ? sIdxP + c.termMonths - 1 : nowIdxP + c.termMonths - 1;
+      payoffStr = fmtMonthIdx(endP) + ' (' + Math.max(0, endP - nowIdxP + 1) + ' mo)';
+    } else if (balance > 0 && avgMonthly > 0) {
       if (rate > 0) {
         var mr = rate / 100 / 12;
         var n = -Math.log(1 - (mr * balance / avgMonthly)) / Math.log(1 + mr);
-        if (isFinite(n) && n > 0) {
-          var pd = new Date(); pd.setMonth(pd.getMonth() + Math.ceil(n));
-          payoffStr = pd.toLocaleDateString('sv-SE', { year: 'numeric', month: 'short' }) + ' (' + Math.ceil(n) + ' mo)';
-        } else { payoffStr = '<span style="color:var(--coral)">Never</span>'; }
+        if (isFinite(n) && n > 0) payoffStr = fmtMonthIdx(nowIdxP + Math.ceil(n) - 1) + ' (' + Math.ceil(n) + ' mo)';
+        else payoffStr = '<span style="color:var(--coral)">Never</span>';
       } else {
         var mo = Math.ceil(balance / avgMonthly);
-        var pd = new Date(); pd.setMonth(pd.getMonth() + mo);
-        payoffStr = pd.toLocaleDateString('sv-SE', { year: 'numeric', month: 'short' }) + ' (' + mo + ' mo)';
+        payoffStr = fmtMonthIdx(nowIdxP + mo - 1) + ' (' + mo + ' mo)';
       }
     }
-    // Determine remaining term: explicit termMonths, or calculated from amortization
-    var remainTerm = c.termMonths || 0;
-    if (!remainTerm && balance > 0 && avgMonthly > 0) {
+    // Determine remaining term: plan-derived, explicit termMonths, or from amortization
+    var remainTerm = planSum ? planSum.termMonths : (c.termMonths || 0);
+    if (!planSum && !remainTerm && balance > 0 && avgMonthly > 0) {
       if (rate > 0) {
         var mr2 = rate / 100 / 12;
         var n2 = -Math.log(1 - (mr2 * balance / avgMonthly)) / Math.log(1 + mr2);
@@ -7748,7 +8050,16 @@ function renderLoans() {
     var remainingCY = balance;
     var currentYear = now.getFullYear();
 
-    if (amort > 0) {
+    if (planSum && avgMonthly > 0) {
+      // Pay the plan's monthly from next month through December, interest-aware
+      var mrCY = effMonthlyRate(rate);
+      var balCY = balance;
+      for (var fm2 = currentMonth + 1; fm2 <= 12 && balCY > 0; fm2++) {
+        balCY = mrCY > 0 ? balCY * (1 + mrCY) - avgMonthly : balCY - avgMonthly;
+        if (balCY < 0) balCY = 0;
+      }
+      remainingCY = balCY;
+    } else if (amort > 0) {
       var mr = rate / 100 / 12;
       var bal = balance;
       for (var fm = currentMonth + 1; fm <= 12; fm++) {
@@ -7768,7 +8079,27 @@ function renderLoans() {
       }
       remainingCY = bal;
     }
-    return { id: c.id || null, name: c.name, type: c.type, country: c.country || 'se', balance: balance, rate: rate, avgMonthly: avgMonthly, paidYTD: paidYTD, isActive: isActive, payoffStr: payoffStr, autoDetected: c.autoDetected, termMonths: remainTerm, remainingCY: remainingCY };
+    // Start / End of the repayment window (plan dates where available)
+    var startStr = '—', endStr = '—';
+    var nowIdxRow = (new Date()).getFullYear() * 12 + (new Date()).getMonth();
+    if (planSum) {
+      var sIdx = null;
+      if (Array.isArray(c.activePlans) && c.activePlans.length) {
+        var starts = c.activePlans.filter(function(p){return p.amount>0&&p.months>0;})
+          .map(function(p){var x=monthIdx(p.start);return isNaN(x)?null:x;}).filter(function(x){return x!==null;});
+        if (starts.length) sIdx = Math.min.apply(null, starts);
+        if (planSum.payoffIdx !== null) endStr = fmtMonthIdx(planSum.payoffIdx - 1);
+      } else if (c.bundlePlan) {
+        var bs = monthIdx(c.bundlePlan.start); if (!isNaN(bs)) sIdx = bs;
+        var be = monthIdx(c.bundlePlan.end);
+        endStr = !isNaN(be) ? fmtMonthIdx(be) : (planSum.payoffIdx !== null ? fmtMonthIdx(planSum.payoffIdx - 1) : '—');
+      }
+      if (sIdx !== null) startStr = fmtMonthIdx(sIdx);
+    } else {
+      if (c.startDate) { var cs = monthIdx(c.startDate.substring(0, 7)); if (!isNaN(cs)) startStr = fmtMonthIdx(cs); }
+      if (remainTerm > 0) endStr = fmtMonthIdx(nowIdxRow + remainTerm - 1);
+    }
+    return { id: c.id || null, name: c.name, type: c.type, country: c.country || 'se', balance: balance, rate: rate, avgMonthly: avgMonthly, paidYTD: paidYTD, isActive: isActive, payoffStr: payoffStr, autoDetected: c.autoDetected, termMonths: remainTerm, remainingCY: remainingCY, startStr: startStr, endStr: endStr };
   });
 
   // Group by type
@@ -7880,7 +8211,9 @@ function renderLoans() {
         '<td class="amt neg" onclick="' + clickFn + '">' + fmt(-c.avgMonthly) + '</td>' +
         '<td class="amt neg" onclick="' + clickFn + '">' + fmt(-c.paidYTD) + '</td>' +
         '<td class="amt neg" onclick="' + clickFn + '">' + fmt(-c.remainingCY) + '</td>' +
-        '<td style="font-size:10px;color:var(--text2);white-space:nowrap" onclick="' + clickFn + '">' + c.payoffStr + '</td>' +
+        '<td style="color:var(--text2);white-space:nowrap" onclick="' + clickFn + '">' + c.startStr + '</td>' +
+        '<td style="color:var(--text2);white-space:nowrap" onclick="' + clickFn + '">' + c.endStr + '</td>' +
+        '<td style="color:var(--text2);white-space:nowrap" onclick="' + clickFn + '">' + c.payoffStr + '</td>' +
         '<td style="text-align:center"><button class="import-action" style="font-size:9px;padding:2px 6px" onclick="event.stopPropagation();simulateLoan(' + JSON.stringify({name:c.name,balance:c.balance,rate:c.rate,monthly:c.avgMonthly,termMonths:c.termMonths||0}).replace(/"/g,'&quot;') + ')">Sim</button></td>' +
       '</tr>';
     }).join('');
@@ -7903,7 +8236,7 @@ function renderLoans() {
       '<td class="amt neg">' + fmt(-tMonthly) + '</td>' +
       '<td class="amt neg">' + fmt(-tPaidYTD) + '</td>' +
       '<td class="amt neg">' + fmt(-tRemCY) + '</td>' +
-      '<td></td><td></td>' +
+      '<td></td><td></td><td></td><td></td>' +
       '</tr>';
   }
 
@@ -8131,6 +8464,325 @@ function useDetectedPayment() {
   updateCreditorProjection();
 }
 
+// ── Pay-over-time (BNPL) tiers: amount thresholds unlock longer terms ──
+function addPayPlanRow(min, months) {
+  var wrap = document.getElementById('credPayPlans');
+  if (!wrap) return;
+  var inputStyle = 'width:100%;border:0.5px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;font-family:var(--sans);background:var(--surface2);color:var(--text1);outline:none';
+  var row = document.createElement('div');
+  row.className = 'pp-row';
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 28px;gap:8px;margin-bottom:6px;align-items:center';
+  row.innerHTML =
+    '<input class="ppMin" type="text" inputmode="numeric" value="' + groupNum(min || 0) + '" title="0 = any amount" style="' + inputStyle + '" oninput="checkPayPlanAmount()" onchange="this.value=groupNum(parseGroupedNum(this.value))">' +
+    '<input class="ppMonths" type="number" step="1" min="1" value="' + (months || '') + '" placeholder="e.g. 12" style="' + inputStyle + '" oninput="checkPayPlanAmount()">' +
+    '<button class="import-action" style="color:var(--coral);font-size:11px" title="Remove tier" onclick="this.parentElement.remove();checkPayPlanAmount()">✕</button>';
+  wrap.appendChild(row);
+}
+
+function addKlarnaDefaultPlans() {
+  var wrap = document.getElementById('credPayPlans');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  [[0, 6], [1250, 12], [2500, 24], [3500, 36]].forEach(function(p) { addPayPlanRow(p[0], p[1]); });
+  checkPayPlanAmount();
+}
+
+function getPayPlansFromModal() {
+  var wrap = document.getElementById('credPayPlans');
+  if (!wrap) return [];
+  var plans = [];
+  wrap.querySelectorAll('.pp-row').forEach(function(row) {
+    var min = parseGroupedNum(row.querySelector('.ppMin').value);
+    var months = parseInt(row.querySelector('.ppMonths').value, 10) || 0;
+    if (months > 0) plans.push({ min: min, months: months });
+  });
+  plans.sort(function(a, b) { return a.min - b.min; });
+  return plans;
+}
+
+function checkPayPlanAmount() {
+  var out = document.getElementById('ppCheckResult');
+  var inp = document.getElementById('ppCheckAmount');
+  if (!out || !inp) return;
+  var amount = parseGroupedNum(inp.value);
+  if (amount <= 0) { out.textContent = ''; return; }
+  var plans = getPayPlansFromModal();
+  if (plans.length === 0) { out.textContent = 'No tiers defined yet.'; return; }
+  var eligible = plans.filter(function(p) { return amount >= p.min; });
+  if (eligible.length === 0) {
+    out.innerHTML = '<span style="color:var(--coral)">Below the lowest tier (' + groupNum(plans[0].min) + ' kr) — no plan available.</span>';
+    return;
+  }
+  var rate = parseFloat(document.getElementById('credEditRate').value) || 0;
+  // Klarna-style: fixed monthly payment (annuity), APR treated as EFFECTIVE
+  // annual rate → monthly rate = (1+APR)^(1/12) − 1 (verified against Klarna's own quote)
+  var mr = rate > 0 ? Math.pow(1 + rate / 100, 1 / 12) - 1 : 0;
+  var rows = eligible.map(function(p) {
+    var monthly = mr > 0
+      ? amount * mr / (1 - Math.pow(1 + mr, -p.months))
+      : amount / p.months;
+    var total = monthly * p.months;
+    var interest = total - amount;
+    return '<div style="padding:2px 0"><b>' + p.months + ' mo</b> — ' + groupNum(Math.round(monthly)) + ' kr/mo' +
+      (mr > 0 ? ' <span style="color:var(--text3)">· interest ' + groupNum(Math.round(interest)) + ' kr · total ' + groupNum(Math.round(total)) + ' kr</span>' : '') +
+      '</div>';
+  });
+  out.innerHTML = rows.join('') + '<div style="color:var(--text3);padding-top:2px">' + (rate > 0 ? 'Fixed monthly payment at ' + rate + '% effective APR, as Klarna quotes it.' : 'No interest applied — set the rate above for real costs.') + '</div>';
+}
+
+// ── Financed purchases (active plans): one Klarna-style annuity per purchase ──
+// Monthly rate from the quoted APR treated as an EFFECTIVE annual rate.
+function effMonthlyRate(ratePct) {
+  return ratePct > 0 ? Math.pow(1 + ratePct / 100, 1 / 12) - 1 : 0;
+}
+function planMonthlyPayment(amount, ratePct, months) {
+  var mr = effMonthlyRate(ratePct);
+  return mr > 0 ? amount * mr / (1 - Math.pow(1 + mr, -months)) : amount / months;
+}
+function monthIdx(ym) { // "2026-08" → absolute month index
+  var p = String(ym || '').split('-');
+  return p.length >= 2 ? parseInt(p[0], 10) * 12 + (parseInt(p[1], 10) - 1) : NaN;
+}
+function fmtMonthIdx(idx) {
+  var mAbbr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return mAbbr[idx % 12] + ' ' + Math.floor(idx / 12);
+}
+
+// Transactions offered in the purchase picker: this creditor's account first,
+// then payee matches, then all outflows as a last resort.
+var _apTxnOptions = [];
+function creditorTxnOptions(creditorName) {
+  var name = (creditorName || '').toLowerCase();
+  var txns = (DATA.transactions || []).filter(function(t) { return t.amount < 0 && t.date; });
+  var list = name ? txns.filter(function(t) {
+    return getAccountDisplayName(getAccountKey(t)).toLowerCase() === name;
+  }) : [];
+  if (!list.length && name) {
+    list = txns.filter(function(t) { return getPayeeDisplay(t.description).toLowerCase().indexOf(name) !== -1; });
+  }
+  if (!list.length) list = txns;
+  return list.sort(function(a, b) { return b.date.localeCompare(a.date); }).slice(0, 300);
+}
+
+function onPlanTxnPick(sel) {
+  var row = sel.closest('.ap-row');
+  var descInp = row.querySelector('.apDesc');
+  if (sel.value === '__custom__') {
+    descInp.style.display = '';
+  } else {
+    var t = (DATA.transactions || []).find(function(x) { return x.id === sel.value; });
+    if (t) {
+      descInp.value = getPayeeDisplay(t.description);
+      descInp.style.display = 'none';
+      row.querySelector('.apAmount').value = groupNum(Math.round(Math.abs(t.amount)));
+      // First Klarna invoice is typically the month after the purchase
+      var idx = monthIdx(t.date.substring(0, 7)) + 1;
+      row.querySelector('.apStart').value = Math.floor(idx / 12) + '-' + String((idx % 12) + 1).padStart(2, '0');
+    }
+  }
+  updateActivePlanCalcs();
+}
+
+function addActivePlanRow(desc, amount, months, start, txnId) {
+  var wrap = document.getElementById('credActivePlans');
+  if (!wrap) return;
+  if (!start) {
+    var now = new Date();
+    start = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  }
+  var inputStyle = 'width:100%;border:0.5px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;font-family:var(--sans);background:var(--surface2);color:var(--text1);outline:none';
+  var hasTxn = txnId && _apTxnOptions.some(function(t) { return t.id === txnId; });
+  var opts = '<option value="__custom__">— Manual entry —</option>' + _apTxnOptions.map(function(t) {
+    return '<option value="' + t.id + '"' + (txnId === t.id ? ' selected' : '') + '>' +
+      t.date + ' · ' + esc(getPayeeDisplay(t.description)) + ' · ' + groupNum(Math.round(Math.abs(t.amount))) + ' kr</option>';
+  }).join('');
+  var row = document.createElement('div');
+  row.className = 'ap-row';
+  row.style.cssText = 'margin-bottom:8px';
+  row.innerHTML =
+    '<div style="display:grid;grid-template-columns:1.6fr 0.9fr 0.6fr 0.9fr 28px;gap:8px;align-items:start">' +
+      '<div style="display:flex;flex-direction:column;gap:4px;min-width:0">' +
+        '<select class="apPick" onchange="onPlanTxnPick(this)" style="' + inputStyle + '">' + opts + '</select>' +
+        '<input class="apDesc" type="text" value="' + esc(desc || '').replace(/"/g, '&quot;') + '" placeholder="Description" style="' + inputStyle + (hasTxn ? ';display:none' : '') + '">' +
+      '</div>' +
+      '<input class="apAmount" type="text" inputmode="numeric" value="' + (amount ? groupNum(amount) : '') + '" placeholder="0" style="' + inputStyle + '" oninput="updateActivePlanCalcs()" onchange="this.value=this.value.trim()?groupNum(parseGroupedNum(this.value)):\'\'">' +
+      '<input class="apMonths" type="number" step="1" min="1" value="' + (months || '') + '" placeholder="12" style="' + inputStyle + '" oninput="updateActivePlanCalcs()">' +
+      '<input class="apStart" type="month" value="' + start + '" style="' + inputStyle + '" oninput="updateActivePlanCalcs()">' +
+      '<button class="import-action" style="color:var(--coral);font-size:11px" title="Remove plan" onclick="this.closest(\'.ap-row\').remove();updateActivePlanCalcs()">✕</button>' +
+    '</div>' +
+    '<div class="apCalc" style="font-size:10px;color:var(--text3);padding:2px 2px 0"></div>';
+  wrap.appendChild(row);
+  updateActivePlanCalcs();
+}
+
+function getActivePlansFromModal() {
+  var wrap = document.getElementById('credActivePlans');
+  if (!wrap) return [];
+  var plans = [];
+  wrap.querySelectorAll('.ap-row').forEach(function(row) {
+    var amount = parseGroupedNum(row.querySelector('.apAmount').value);
+    var months = parseInt(row.querySelector('.apMonths').value, 10) || 0;
+    if (amount > 0 && months > 0) {
+      var pick = row.querySelector('.apPick');
+      plans.push({
+        desc: row.querySelector('.apDesc').value.trim(),
+        txnId: (pick && pick.value !== '__custom__') ? pick.value : '',
+        amount: amount,
+        months: months,
+        start: row.querySelector('.apStart').value || ''
+      });
+    }
+  });
+  return plans;
+}
+
+function updateActivePlanCalcs() {
+  var wrap = document.getElementById('credActivePlans');
+  var summary = document.getElementById('credPlanSummary');
+  if (!wrap || !summary) return;
+  var rate = parseFloat(document.getElementById('credEditRate').value) || 0;
+  var mr = effMonthlyRate(rate);
+  var now = new Date();
+  var nowIdx = now.getFullYear() * 12 + now.getMonth();
+
+  var plans = [];
+  wrap.querySelectorAll('.ap-row').forEach(function(row) {
+    var amount = parseGroupedNum(row.querySelector('.apAmount').value);
+    var months = parseInt(row.querySelector('.apMonths').value, 10) || 0;
+    var startIdx = monthIdx(row.querySelector('.apStart').value);
+    var calc = row.querySelector('.apCalc');
+    if (amount <= 0 || months <= 0 || isNaN(startIdx)) { calc.textContent = ''; return; }
+    var pay = planMonthlyPayment(amount, rate, months);
+    var endIdx = startIdx + months - 1;                        // last payment month
+    var k = Math.min(Math.max(nowIdx - startIdx + 1, 0), months); // payments made incl. this month
+    var balance = mr > 0
+      ? amount * Math.pow(1 + mr, k) - pay * (Math.pow(1 + mr, k) - 1) / mr
+      : amount - pay * k;
+    if (balance < 0.5) balance = 0;
+    var done = nowIdx > endIdx;
+    calc.innerHTML = done
+      ? '<span style="color:var(--green)">Paid off (' + fmtMonthIdx(endIdx) + ')</span>'
+      : '<b>' + groupNum(Math.round(pay)) + ' kr/mo</b> · ' + (endIdx - Math.max(nowIdx, startIdx - 1)) + ' payments left · remaining ~' + groupNum(Math.round(balance)) + ' kr · until ' + fmtMonthIdx(endIdx);
+    plans.push({ pay: pay, startIdx: startIdx, endIdx: endIdx, balance: balance, done: done });
+  });
+
+  var active = plans.filter(function(p) { return !p.done; });
+  if (active.length === 0) { summary.style.display = 'none'; summary.innerHTML = ''; return; }
+
+  // Payment step-down timeline: total kr/mo changes as tranches finish or start
+  var lastEnd = Math.max.apply(null, active.map(function(p) { return p.endIdx; }));
+  var steps = [];
+  var prev = -1;
+  for (var m = nowIdx; m <= lastEnd; m++) {
+    var total = 0;
+    active.forEach(function(p) { if (m >= p.startIdx && m <= p.endIdx) total += p.pay; });
+    var rounded = Math.round(total);
+    if (rounded !== prev) { steps.push({ from: m, total: rounded }); prev = rounded; }
+  }
+  var totalBalance = active.reduce(function(s, p) { return s + p.balance; }, 0);
+  var stepHtml = steps.map(function(s, i) {
+    var to = (i + 1 < steps.length) ? s.from === steps[i + 1].from - 1 ? fmtMonthIdx(s.from) : fmtMonthIdx(s.from) + ' – ' + fmtMonthIdx(steps[i + 1].from - 1) : fmtMonthIdx(s.from) + ' – ' + fmtMonthIdx(lastEnd);
+    return '<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--text2)">' + to + '</span><span style="font-weight:500">' + (s.total > 0 ? groupNum(s.total) + ' kr/mo' : '—') + '</span></div>';
+  }).join('');
+  summary.style.display = '';
+  summary.innerHTML =
+    '<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--text2)">Total this month</span><span style="font-weight:600">' + groupNum(steps.length ? steps[0].total : 0) + ' kr/mo</span></div>' +
+    '<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:0.5px solid var(--border);margin-bottom:4px"><span style="color:var(--text2)">Remaining balance (' + active.length + ' plan' + (active.length !== 1 ? 's' : '') + ')</span><span style="font-weight:600">' + groupNum(Math.round(totalBalance)) + ' kr</span></div>' +
+    stepHtml +
+    '<div style="display:flex;justify-content:space-between;padding:4px 0 0;color:var(--green)"><span>Debt-free</span><span style="font-weight:600">' + fmtMonthIdx(lastEnd + 1) + '</span></div>';
+}
+
+// Show only the sections that fit the creditor type:
+// bnpl → tiers + financed purchases + bundle; credit → bundle; loans → classic only.
+function updateCreditorSections() {
+  var typeEl = document.getElementById('credEditType');
+  if (!typeEl) return;
+  var type = typeEl.value;
+  var mode = type === 'bnpl' ? 'bnpl' : (type === 'credit_card' || type === 'consumer') ? 'credit' : 'loan';
+  var show = function(id, on) { var el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
+  // loan   → classic Repayment + rak Payoff projection
+  // credit → Bundle plan only (revolving; one fixed monthly)
+  // bnpl   → Pay-over-time tiers + Financed purchases + Bundle plan
+  show('credSecRepayment', mode === 'loan');
+  show('credSecProjection', mode === 'loan');
+  show('credSecTiers', mode === 'bnpl');
+  show('credSecPurchases', mode === 'bnpl');
+  show('credSecBundle', mode !== 'loan');
+}
+
+// Bundle plan: whole balance on one fixed payment. Give monthly OR end date;
+// the other is derived. Shows balance left as of today.
+function updateBundleCalc() {
+  var el = document.getElementById('credBundleCalc');
+  if (!el) return;
+  var P = parseGroupedNum(document.getElementById('credBundleAmount').value);
+  var pay = parseGroupedNum(document.getElementById('credBundleMonthly').value);
+  var startIdx = monthIdx(document.getElementById('credBundleStart').value);
+  var endIdx = monthIdx(document.getElementById('credBundleEnd').value);
+  var rate = parseFloat(document.getElementById('credEditRate').value) || 0;
+  var mr = effMonthlyRate(rate);
+  if (P <= 0 || isNaN(startIdx) || (pay <= 0 && isNaN(endIdx))) { el.style.display = 'none'; el.innerHTML = ''; return; }
+
+  var line = function(label, val, style) {
+    return '<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--text2)">' + label + '</span><span style="font-weight:500;' + (style || '') + '">' + val + '</span></div>';
+  };
+  var rows = [];
+  var now = new Date();
+  var nowIdx = now.getFullYear() * 12 + now.getMonth();
+  var balAfter = function(k) { // balance after k payments of `pay`
+    var b = mr > 0
+      ? P * Math.pow(1 + mr, k) - pay * (Math.pow(1 + mr, k) - 1) / mr
+      : P - pay * k;
+    return b < 0.5 ? 0 : b;
+  };
+  var bothGiven = pay > 0 && !isNaN(endIdx);
+
+  if (bothGiven) {
+    // FIXED WINDOW: pay `pay` kr/mo from start to end — what remains afterwards?
+    var n = endIdx - startIdx + 1;
+    if (n <= 0) { el.style.display = ''; el.innerHTML = '<span style="color:var(--coral)">Last payment must be after the first payment.</span>'; return; }
+    var k = Math.min(Math.max(nowIdx - startIdx + 1, 0), n);
+    var balToday = balAfter(k);
+    var balEnd = balAfter(n);
+    var principalPaid = P - balEnd;
+    rows.push(line('Window', n + ' payments of ' + groupNum(pay) + ' kr (' + fmtMonthIdx(startIdx) + ' – ' + fmtMonthIdx(endIdx) + ')'));
+    rows.push(line('Paid to date', k + ' of ' + n + ' · ~' + groupNum(Math.round(pay * k)) + ' kr'));
+    rows.push(line('Balance left today', groupNum(Math.round(balToday)) + ' kr'));
+    rows.push(line('Remaining after ' + fmtMonthIdx(endIdx), '<b>' + groupNum(Math.round(balEnd)) + ' kr</b>', balEnd > 0 ? 'color:var(--coral)' : 'color:var(--green)'));
+    if (mr > 0) rows.push(line('Interest in window', '~' + groupNum(Math.round(pay * n - principalPaid)) + ' kr'));
+    if (balEnd > 0) {
+      var needed = planMonthlyPayment(P, rate, n);
+      rows.push('<div style="color:var(--text3);padding-top:4px">To be debt-free by ' + fmtMonthIdx(endIdx) + ' instead: ~' + groupNum(Math.round(needed)) + ' kr/mo.</div>');
+    }
+  } else {
+    var n;
+    if (pay > 0) {
+      // MONTHLY ONLY: derive the payoff term
+      if (mr > 0 && pay <= P * mr) {
+        el.style.display = '';
+        el.innerHTML = '<span style="color:var(--coral)">Monthly payment (' + groupNum(pay) + ' kr) does not cover the interest (~' + groupNum(Math.round(P * mr)) + ' kr/mo) — the balance would grow.</span>';
+        return;
+      }
+      n = mr > 0 ? Math.ceil(-Math.log(1 - mr * P / pay) / Math.log(1 + mr)) : Math.ceil(P / pay);
+    } else {
+      // END DATE ONLY: derive the required monthly
+      n = endIdx - startIdx + 1;
+      if (n <= 0) { el.style.display = ''; el.innerHTML = '<span style="color:var(--coral)">Last payment must be after the first payment.</span>'; return; }
+      pay = planMonthlyPayment(P, rate, n);
+      rows.push(line('Required monthly', '<b>' + groupNum(Math.round(pay)) + ' kr/mo</b>'));
+    }
+    var derivedEnd = startIdx + n - 1;
+    var k2 = Math.min(Math.max(nowIdx - startIdx + 1, 0), n);
+    rows.push(line('Term', n + ' months (' + fmtMonthIdx(startIdx) + ' – ' + fmtMonthIdx(derivedEnd) + ')'));
+    rows.push(line('Paid to date', k2 + ' payment' + (k2 !== 1 ? 's' : '') + ' · ~' + groupNum(Math.round(pay * k2)) + ' kr'));
+    rows.push(line('Balance left today', '<b>' + groupNum(Math.round(balAfter(k2))) + ' kr</b>'));
+    if (mr > 0) rows.push(line('Total interest', '~' + groupNum(Math.round(pay * n - P)) + ' kr'));
+    rows.push(line('Debt-free', fmtMonthIdx(derivedEnd + 1), 'color:var(--green);font-weight:600'));
+  }
+  el.style.display = '';
+  el.innerHTML = rows.join('');
+}
+
 function editCreditorModal(creditor, isNew) {
   var typeOpts = LOAN_TYPES.map(function(t) {
     return '<option value="' + t.value + '"' + (t.value === creditor.type ? ' selected' : '') + '>' + t.label + '</option>';
@@ -8146,6 +8798,16 @@ function editCreditorModal(creditor, isNew) {
   };
   var kr = ' <span style="font-weight:400;color:var(--text3)">(kr)</span>';
 
+  // Prefill the "Last payment" field from the stored start date + term
+  var endMonthVal = '';
+  (function() {
+    var s = monthIdx((creditor.startDate || '').substring(0, 7));
+    if (!isNaN(s) && creditor.termMonths > 0) {
+      var e = s + creditor.termMonths - 1;
+      endMonthVal = Math.floor(e / 12) + '-' + String((e % 12) + 1).padStart(2, '0');
+    }
+  })();
+
   var detected = getDetectedMonthlyPayment(creditor.name);
   var detectedHint = detected > 0
     ? '<div style="font-size:11px;color:var(--text2);margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
@@ -8158,7 +8820,7 @@ function editCreditorModal(creditor, isNew) {
   var modal = document.createElement('div');
   modal.className = 'modal-overlay open';
   modal.id = 'creditorModal';
-  modal.innerHTML = '<div class="modal" style="position:relative;width:620px">' +
+  modal.innerHTML = '<div class="modal" style="position:relative;width:930px">' +
     '<h2>' + (isNew ? 'Add' : 'Edit') + ' Creditor' + (creditor.name ? ' — ' + esc(creditor.name) : '') + '</h2>' +
 
     sectionHead('Loan', '') +
@@ -8169,7 +8831,7 @@ function editCreditorModal(creditor, isNew) {
       '</div>' +
       '<div>' +
         '<label style="' + labelStyle + '">Type</label>' +
-        '<select id="credEditType" style="' + inputStyle + '">' + typeOpts + '</select>' +
+        '<select id="credEditType" style="' + inputStyle + '" onchange="updateCreditorSections()">' + typeOpts + '</select>' +
       '</div>' +
       '<div>' +
         '<label style="' + labelStyle + '">Country</label>' +
@@ -8196,8 +8858,9 @@ function editCreditorModal(creditor, isNew) {
       '</div>' +
     '</div>' +
 
+    '<div id="credSecRepayment">' +
     sectionHead('Repayment', 'drives the payoff projection below') +
-    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px">' +
       '<div>' +
         '<label style="' + labelStyle + '">Monthly Payment' + kr + '</label>' +
         '<input id="credEditMonthly" type="text" inputmode="numeric" data-detected="' + detected + '" value="' + (creditor.monthlyPayment ? groupNum(creditor.monthlyPayment) : '') + '" placeholder="' + (detected > 0 ? '~' + groupNum(detected) + ' (detected)' : '0') + '" style="' + inputStyle + '" onchange="this.value=this.value.trim()?groupNum(parseGroupedNum(this.value)):\'\'">' +
@@ -8208,20 +8871,84 @@ function editCreditorModal(creditor, isNew) {
       '</div>' +
       '<div>' +
         '<label style="' + labelStyle + '">Remaining <span style="font-weight:400;color:var(--text3)">(months)</span></label>' +
-        '<input id="credEditTermMonths" type="number" step="1" value="' + (creditor.termMonths || '') + '" placeholder="e.g. 120" style="' + inputStyle + '">' +
+        '<input id="credEditTermMonths" type="number" step="1" value="' + (creditor.termMonths || '') + '" placeholder="e.g. 120" style="' + inputStyle + '" oninput="document.getElementById(\'credEditEnd\').value=\'\';updateCreditorProjection()">' +
         '<div id="credPayoffHint" style="font-size:10px;color:var(--text3);margin-top:3px;min-height:12px"></div>' +
+      '</div>' +
+      '<div>' +
+        '<label style="' + labelStyle + '">Last payment <span style="font-weight:400;color:var(--text3)">(or end date)</span></label>' +
+        '<input id="credEditEnd" type="month" value="' + endMonthVal + '" style="' + inputStyle + '" oninput="syncTermFromEndDate()">' +
+        '<div style="font-size:10px;color:var(--text3);margin-top:3px;min-height:12px">fills months from Start Date</div>' +
       '</div>' +
     '</div>' +
     detectedHint +
     '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px">' +
       '<div>' +
         '<label style="' + labelStyle + '">Start Date</label>' +
-        '<input id="credEditStart" type="date" value="' + (creditor.startDate || '') + '" style="' + inputStyle + '">' +
+        '<input id="credEditStart" type="date" value="' + (creditor.startDate || '') + '" style="' + inputStyle + '" oninput="if(document.getElementById(\'credEditEnd\').value)syncTermFromEndDate()">' +
       '</div>' +
     '</div>' +
+    '</div>' +
 
+    '<div id="credSecTiers">' +
+    sectionHead('Pay over time', 'amount thresholds unlock longer terms (BNPL plans)') +
+    '<div style="display:grid;grid-template-columns:1fr 1fr 28px;gap:8px;margin-bottom:4px">' +
+      '<span style="font-size:11px;color:var(--text3)">From amount (kr)</span>' +
+      '<span style="font-size:11px;color:var(--text3)">Term (months)</span><span></span>' +
+    '</div>' +
+    '<div id="credPayPlans"></div>' +
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">' +
+      '<button class="top-btn" style="font-size:10px;padding:3px 10px" onclick="addPayPlanRow()">＋ Add tier</button>' +
+      '<button class="top-btn" style="font-size:10px;padding:3px 10px" onclick="addKlarnaDefaultPlans()" title="0→6, 1 250→12, 2 500→24, 3 500→36 months">Use Klarna defaults</button>' +
+    '</div>' +
+    '<div style="display:flex;gap:8px;margin-top:10px;align-items:baseline;flex-wrap:wrap">' +
+      '<span style="font-size:11px;color:var(--text2);white-space:nowrap">Check an amount:</span>' +
+      '<input id="ppCheckAmount" type="text" inputmode="numeric" placeholder="e.g. 3 600" style="width:110px;border:0.5px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;font-family:var(--sans);background:var(--surface2);color:var(--text1);outline:none" oninput="checkPayPlanAmount()" onchange="this.value=this.value.trim()?groupNum(parseGroupedNum(this.value)):\'\'">' +
+      '<span id="ppCheckResult" style="font-size:11px;color:var(--text2);flex:1;min-width:200px"></span>' +
+    '</div>' +
+    '</div>' +
+
+    '<div id="credSecPurchases">' +
+    sectionHead('Financed purchases', 'pick transactions, each on its own fixed-payment plan') +
+    '<div style="display:grid;grid-template-columns:1.6fr 0.9fr 0.6fr 0.9fr 28px;gap:8px;margin-bottom:4px">' +
+      '<span style="font-size:11px;color:var(--text3)">Purchase</span>' +
+      '<span style="font-size:11px;color:var(--text3)">Amount (kr)</span>' +
+      '<span style="font-size:11px;color:var(--text3)">Months</span>' +
+      '<span style="font-size:11px;color:var(--text3)">First payment</span><span></span>' +
+    '</div>' +
+    '<div id="credActivePlans"></div>' +
+    '<div style="display:flex;gap:8px;align-items:center;margin-top:4px">' +
+      '<button class="top-btn" style="font-size:10px;padding:3px 10px" onclick="addActivePlanRow()">＋ Add purchase</button>' +
+    '</div>' +
+    '<div id="credPlanSummary" style="display:none;background:var(--surface2);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:11px"></div>' +
+    '</div>' +
+
+    '<div id="credSecBundle">' +
+    sectionHead('Bundle plan', 'one fixed monthly payment for the whole balance — give monthly OR end date') +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+      '<div>' +
+        '<label style="' + labelStyle + '">Total amount' + kr + '</label>' +
+        '<input id="credBundleAmount" type="text" inputmode="numeric" value="' + (creditor.bundlePlan && creditor.bundlePlan.amount ? groupNum(creditor.bundlePlan.amount) : '') + '" placeholder="e.g. 57 294" style="' + inputStyle + '" oninput="updateBundleCalc()" onchange="this.value=this.value.trim()?groupNum(parseGroupedNum(this.value)):\'\'">' +
+      '</div>' +
+      '<div>' +
+        '<label style="' + labelStyle + '">Monthly payment' + kr + ' <span style="font-weight:400;color:var(--text3)">— or leave empty</span></label>' +
+        '<input id="credBundleMonthly" type="text" inputmode="numeric" value="' + (creditor.bundlePlan && creditor.bundlePlan.monthly ? groupNum(creditor.bundlePlan.monthly) : '') + '" placeholder="derived from end date" style="' + inputStyle + '" oninput="updateBundleCalc()" onchange="this.value=this.value.trim()?groupNum(parseGroupedNum(this.value)):\'\'">' +
+      '</div>' +
+      '<div>' +
+        '<label style="' + labelStyle + '">First payment</label>' +
+        '<input id="credBundleStart" type="month" value="' + ((creditor.bundlePlan && creditor.bundlePlan.start) || '') + '" style="' + inputStyle + '" oninput="updateBundleCalc()">' +
+      '</div>' +
+      '<div>' +
+        '<label style="' + labelStyle + '">Last payment <span style="font-weight:400;color:var(--text3)">— or leave empty</span></label>' +
+        '<input id="credBundleEnd" type="month" value="' + ((creditor.bundlePlan && creditor.bundlePlan.end) || '') + '" placeholder="derived from monthly" style="' + inputStyle + '" oninput="updateBundleCalc()">' +
+      '</div>' +
+    '</div>' +
+    '<div id="credBundleCalc" style="display:none;background:var(--surface2);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:11px"></div>' +
+    '</div>' +
+
+    '<div id="credSecProjection">' +
     sectionHead('Payoff projection', 'rak amortering — updates as you type') +
     '<div id="credProjection" style="background:var(--surface2);border-radius:8px;padding:12px"></div>' +
+    '</div>' +
 
     sectionHead('Notes', '') +
     '<div style="margin-bottom:16px">' +
@@ -8244,12 +8971,100 @@ function editCreditorModal(creditor, isNew) {
     var el = document.getElementById(id);
     if (el) el.addEventListener('input', updateCreditorProjection);
   });
+  // Rate also affects the pay-over-time checker, plans and the bundle
+  var rateEl = document.getElementById('credEditRate');
+  if (rateEl) {
+    rateEl.addEventListener('input', checkPayPlanAmount);
+    rateEl.addEventListener('input', updateActivePlanCalcs);
+    rateEl.addEventListener('input', updateBundleCalc);
+  }
+  // Transactions offered in the purchase picker (this creditor's account first)
+  _apTxnOptions = creditorTxnOptions(creditor.name);
+  // Populate existing pay-over-time tiers and financed purchases
+  (creditor.payPlans || []).forEach(function(p) { addPayPlanRow(p.min, p.months); });
+  (creditor.activePlans || []).forEach(function(p) { addActivePlanRow(p.desc, p.amount, p.months, p.start, p.txnId); });
+  updateActivePlanCalcs();
+  updateBundleCalc();
+  updateCreditorSections();
   updateCreditorProjection();
+}
+
+// Monthly payment schedule {"YYYY-MM": amount} across a creditor's plan window.
+function creditorMonthlySchedule(c) {
+  var rate = c.rate || 0;
+  var sched = {};
+  var add = function(idx, amt) {
+    if (isNaN(idx) || amt <= 0) return;
+    var mk = Math.floor(idx / 12) + '-' + String((idx % 12) + 1).padStart(2, '0');
+    sched[mk] = (sched[mk] || 0) + amt;
+  };
+  if (Array.isArray(c.activePlans) && c.activePlans.length) {
+    c.activePlans.forEach(function(p) {
+      if (!(p.amount > 0 && p.months > 0)) return;
+      var pay = planMonthlyPayment(p.amount, rate, p.months);
+      var s = monthIdx(p.start);
+      for (var i = 0; i < p.months; i++) add(s + i, pay);
+    });
+    return sched;
+  }
+  var bp = c.bundlePlan;
+  if (bp && bp.amount > 0) {
+    var P = bp.amount, pay = bp.monthly || 0, mr = effMonthlyRate(rate);
+    var s = monthIdx(bp.start), e = monthIdx(bp.end), n;
+    if (isNaN(s)) return sched;
+    if (pay > 0 && !isNaN(e)) n = e - s + 1;                 // fixed window
+    else if (pay > 0) n = mr > 0 ? Math.ceil(-Math.log(1 - mr * P / pay) / Math.log(1 + mr)) : Math.ceil(P / pay);
+    else if (!isNaN(e)) { n = e - s + 1; pay = planMonthlyPayment(P, rate, n); }
+    else return sched;
+    if (!isFinite(n) || n <= 0) return sched;
+    for (var i = 0; i < n; i++) add(s + i, pay);
+    return sched;
+  }
+  // Classic loan: monthly payment over the remaining term from the start date.
+  // If no term is set, derive it from balance + rate + monthly (annuity payoff).
+  var monthly = c.monthlyPayment || 0;
+  var term = c.termMonths || 0;
+  var cs = monthIdx((c.startDate || '').substring(0, 7));
+  if (monthly > 0 && isNaN(cs)) return sched;
+  if (monthly > 0 && !term) {
+    var bal = c.balance || 0;
+    if (bal > 0) {
+      var mrc = rate / 100 / 12;
+      if (mrc > 0) {
+        var nn = -Math.log(1 - mrc * bal / monthly) / Math.log(1 + mrc);
+        term = (isFinite(nn) && nn > 0) ? Math.ceil(nn) : 0;
+      } else {
+        term = Math.ceil(bal / monthly);
+      }
+    }
+  }
+  if (monthly > 0 && term > 0 && !isNaN(cs)) { for (var i = 0; i < term; i++) add(cs + i, monthly); }
+  return sched;
+}
+
+// Push a creditor's payment schedule into the ACTIVE budget version under
+// "Loans & Credit::<name>". Clears the old key first (handles renames).
+function syncCreditorToBudget(c, oldName) {
+  ensureBudgetVersions();
+  var B = DATA.budgets; // aliased to the active version
+  [oldName, c.name].forEach(function(nm) {
+    if (!nm) return;
+    var key = 'Loans & Credit::' + nm;
+    Object.keys(B).forEach(function(mk) { if (B[mk] && B[mk][key] !== undefined) delete B[mk][key]; });
+  });
+  if (c.status === 'paid_off') return;
+  var key = 'Loans & Credit::' + c.name;
+  var sched = creditorMonthlySchedule(c);
+  Object.keys(sched).forEach(function(mk) {
+    if (sched[mk] > 0) { if (!B[mk]) B[mk] = {}; B[mk][key] = Math.round(sched[mk]); }
+  });
 }
 
 function saveCreditor(id, isNew) {
   var name = document.getElementById('credEditName').value.trim();
   if (!name) { toast('Name is required'); return; }
+  var prev = (DATA.creditors || []).find(function(c) { return c.id === id; });
+  var oldName = prev ? prev.name : '';
   var obj = {
     id: id,
     name: name,
@@ -8262,8 +9077,41 @@ function saveCreditor(id, isNew) {
     startDate: document.getElementById('credEditStart').value || '',
     termMonths: parseInt(document.getElementById('credEditTermMonths').value) || 0,
     status: document.getElementById('credEditStatus').value,
+    payPlans: getPayPlansFromModal(),
+    activePlans: getActivePlansFromModal(),
+    bundlePlan: (function() {
+      var a = parseGroupedNum(document.getElementById('credBundleAmount').value);
+      var m = parseGroupedNum(document.getElementById('credBundleMonthly').value);
+      var s = document.getElementById('credBundleStart').value || '';
+      var e = document.getElementById('credBundleEnd').value || '';
+      return (a > 0 && (m > 0 || e)) ? { amount: a, monthly: m, start: s, end: e } : null;
+    })(),
     notes: document.getElementById('credEditNotes').value.trim()
   };
+
+  // Validate: if a payment/plan was started, require the fields needed to
+  // schedule it into the budget (so it can't silently do nothing).
+  var mode = obj.type === 'bnpl' ? 'bnpl' : (obj.type === 'credit_card' || obj.type === 'consumer') ? 'credit' : 'loan';
+  function invalid(msg, focusId) {
+    toast(msg);
+    var el = document.getElementById(focusId);
+    if (el) { el.focus(); el.style.borderColor = 'var(--coral)'; setTimeout(function() { el.style.borderColor = ''; }, 2500); }
+  }
+  if (mode === 'loan' && obj.monthlyPayment > 0) {
+    if (!obj.startDate) { invalid('Add a Start Date so the monthly payment can be placed in the budget.', 'credEditStart'); return; }
+    if (!(obj.termMonths > 0) && !(obj.balance > 0)) { invalid('Add a Remaining term or an Outstanding balance so the payoff can be calculated.', 'credEditTermMonths'); return; }
+  }
+  // Bundle: if any field was filled, require amount + start + (monthly or end)
+  var bAmt = parseGroupedNum(document.getElementById('credBundleAmount').value);
+  var bMon = parseGroupedNum(document.getElementById('credBundleMonthly').value);
+  var bStart = document.getElementById('credBundleStart').value || '';
+  var bEnd = document.getElementById('credBundleEnd').value || '';
+  if (mode !== 'loan' && (bAmt > 0 || bMon > 0 || bEnd)) {
+    if (!(bAmt > 0)) { invalid('Bundle plan: enter the Total amount.', 'credBundleAmount'); return; }
+    if (!bStart) { invalid('Bundle plan: enter the First payment month.', 'credBundleStart'); return; }
+    if (!(bMon > 0) && !bEnd) { invalid('Bundle plan: enter a Monthly payment or a Last payment date.', 'credBundleMonthly'); return; }
+  }
+
   if (!DATA.creditors) DATA.creditors = [];
   if (isNew) {
     DATA.creditors.push(obj);
@@ -8272,16 +9120,25 @@ function saveCreditor(id, isNew) {
     if (idx >= 0) DATA.creditors[idx] = obj;
     else DATA.creditors.push(obj);
   }
+  syncCreditorToBudget(obj, oldName);
   saveData(DATA);
   closeCreditorModal();
   renderAll();
-  toast(isNew ? 'Creditor added' : 'Creditor updated');
+  var sched = creditorMonthlySchedule(obj);
+  var nMonths = Object.keys(sched).length;
+  toast((isNew ? 'Creditor added' : 'Creditor updated') + (nMonths ? ' · budget updated (' + nMonths + ' months)' : ''));
 }
 
 function deleteCreditor(id, name) {
   if (!confirm('Remove this creditor?')) return;
   if (id) {
     DATA.creditors = (DATA.creditors || []).filter(function(c) { return c.id !== id; });
+  }
+  // Remove its auto-added budget rows from the active version
+  if (name) {
+    ensureBudgetVersions();
+    var key = 'Loans & Credit::' + name;
+    Object.keys(DATA.budgets).forEach(function(mk) { if (DATA.budgets[mk] && DATA.budgets[mk][key] !== undefined) delete DATA.budgets[mk][key]; });
   }
   // Also hide auto-detected by name
   if (name) {
@@ -8292,6 +9149,20 @@ function deleteCreditor(id, name) {
   closeCreditorModal();
   renderAll();
   toast('Creditor removed');
+}
+
+// Derive Remaining (months) from Start Date + Last payment date.
+function syncTermFromEndDate() {
+  var startEl = document.getElementById('credEditStart');
+  var endEl = document.getElementById('credEditEnd');
+  var termEl = document.getElementById('credEditTermMonths');
+  if (!startEl || !endEl || !termEl) return;
+  var sIdx = monthIdx((startEl.value || '').substring(0, 7));
+  var eIdx = monthIdx(endEl.value);
+  if (!endEl.value) { updateCreditorProjection(); return; }
+  if (isNaN(sIdx)) { toast('Set the Start Date first, then the last payment.'); return; }
+  if (!isNaN(eIdx) && eIdx >= sIdx) termEl.value = eIdx - sIdx + 1;
+  updateCreditorProjection();
 }
 
 function updateCreditorProjection() {

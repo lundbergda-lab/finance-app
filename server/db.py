@@ -28,7 +28,7 @@ SETTINGS_KEYS = [
     "sourceNames", "sourceToAccount", "cashFlowOverrides", "budgetRowTypes",
     "prognosisOverrides", "hiddenCreditors", "hiddenCategories",
     "loanTypeOrder", "userLabels", "accountTypes", "budgetVersions",
-    "activeBudgetVersionId", "apiKey", "currency",
+    "activeBudgetVersionId", "debtChats", "apiKey", "currency",
 ]
 
 DEFAULT_DATA = {
@@ -39,7 +39,7 @@ DEFAULT_DATA = {
     "budgetRowTypes": {}, "prognosisOverrides": {}, "hiddenCreditors": [],
     "hiddenCategories": [], "loanTypeOrder": [], "userLabels": [],
     "accountTypes": {}, "incomes": [], "budgetVersions": [],
-    "activeBudgetVersionId": "", "apiKey": "", "currency": "kr",
+    "activeBudgetVersionId": "", "debtChats": [], "apiKey": "", "currency": "kr",
 }
 
 
